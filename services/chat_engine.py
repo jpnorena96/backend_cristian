@@ -51,7 +51,22 @@ def generate_response(message, conversation_id=None):
             }
 
         # Build message history
-        messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
+        # 0. Fetch Knowledge Base Context
+        try:
+            from models import KnowledgeBase
+            docs = KnowledgeBase.query.all()
+            if docs:
+                context_text = "\n\n".join([f"--- DOCUMENTO REFERENCIA: {d.title} ---\n{d.content[:5000]}..." for d in docs]) # Limit to 5k chars per doc to avoid token overflow
+                
+                # Append context instructions to system prompt
+                detailed_system_prompt = SYSTEM_PROMPT + f"\n\n5. BASE DE CONOCIMIENTO (USAR PARA RESPUESTAS):\n{context_text}\n\nInstrucción: Si la consulta del usuario se relaciona con alguno de los documentos anteriores, ÚSALOS como base principal para tu respuesta o redacción."
+            else:
+                detailed_system_prompt = SYSTEM_PROMPT
+        except Exception as e:
+            print(f"Error loading knowledge base: {e}")
+            detailed_system_prompt = SYSTEM_PROMPT
+
+        messages_payload = [{"role": "system", "content": detailed_system_prompt}]
         
         if conversation_id:
             from models import Message
