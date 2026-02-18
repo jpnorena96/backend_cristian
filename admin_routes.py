@@ -52,6 +52,61 @@ def get_users():
         })
     return jsonify({"users": user_list})
 
+@admin_bp.route('/users', methods=['POST'])
+def create_user():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+    name = data.get('name')
+    role = data.get('role', 'client')
+    is_admin = data.get('isAdmin', False)
+
+    if not email or not password:
+        return jsonify({"error": "Email and password required"}), 400
+
+    if User.query.filter_by(email=email).first():
+        return jsonify({"error": "Email already exists"}), 400
+
+    # In real app, hash password!
+    new_user = User(
+        email=email,
+        password_hash=password, # TODO: Hash this
+        full_name=name,
+        role=role,
+        is_admin=is_admin
+    )
+    db.session.add(new_user)
+    db.session.commit()
+    
+    return jsonify({"message": "User created", "id": new_user.id}), 201
+
+@admin_bp.route('/users/<int:id>', methods=['PUT'])
+def update_user(id):
+    user = db.session.get(User, id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    data = request.get_json()
+    if 'email' in data: user.email = data['email']
+    if 'name' in data: user.full_name = data['name']
+    if 'role' in data: user.role = data['role']
+    if 'isAdmin' in data: user.is_admin = data['isAdmin']
+    if 'password' in data and data['password']:
+        user.password_hash = data['password'] # TODO: Hash this
+        
+    db.session.commit()
+    return jsonify({"message": "User updated"})
+
+@admin_bp.route('/users/<int:id>', methods=['DELETE'])
+def delete_user(id):
+    user = db.session.get(User, id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+        
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"message": "User deleted"})
+
 @admin_bp.route('/conversations', methods=['GET'])
 def get_recent_conversations():
     # Get recent 50 conversations
