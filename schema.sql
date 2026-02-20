@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL, -- Ensure to store hashed passwords, not plain text in prod
     full_name VARCHAR(100),
     role ENUM('client', 'admin') DEFAULT 'client',
+    is_admin BOOLEAN DEFAULT FALSE,
+    is_approved BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

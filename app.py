@@ -10,6 +10,9 @@ def create_app():
     CORS(app)
     db.init_app(app)
 
+    from admin_routes import admin_bp
+    app.register_blueprint(admin_bp)
+
     @app.route('/')
     def index():
          return "LegalTech Backend API is running. Use /api/health or /api/login."
@@ -32,9 +35,60 @@ def create_app():
         user = User.query.filter_by(email=email).first()
         
         if user and user.password_hash == password:
-             return {"status": "success", "token": "dummy-jwt-token", "user": {"id": user.id, "email": user.email, "name": user.full_name}}, 200
+             if not user.is_approved:
+                 return {"status": "error", "message": "Tu cuenta está pendiente de aprobación por un administrador."}, 403
+
+             return {
+                 "status": "success", 
+                 "token": "dummy-jwt-token", 
+                 "user": {
+                     "id": user.id, 
+                     "email": user.email, 
+                     "name": user.full_name,
+                     "role": user.role,
+                     "is_admin": user.is_admin
+                 }
+             }, 200
             
         return {"status": "error", "message": "Credenciales inválidas"}, 401
+
+    @app.route('/api/register', methods=['POST'])
+    def register():
+        from flask import request
+        from models import User
+        
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        name = data.get('name')
+        
+        if not email or not password:
+            return {"error": "Email y contraseña requeridos"}, 400
+            
+        if User.query.filter_by(email=email).first():
+            return {"error": "El correo ya está registrado"}, 400
+            
+        # Determine if this is the first user (make admin/approved automatically)
+        user_count = User.query.count()
+        is_first_user = (user_count == 0)
+        
+        new_user = User(
+            email=email,
+            password_hash=password, # TODO: Hash
+            full_name=name,
+            role='admin' if is_first_user else 'client',
+            is_admin=is_first_user,
+            is_approved=is_first_user # Auto-approve first user
+        )
+        
+        db.session.add(new_user)
+        db.session.commit()
+        
+        msg = "Usuario creado exitosamente."
+        if not is_first_user:
+            msg += " Su cuenta está pendiente de aprobación."
+            
+        return {"status": "success", "message": msg, "userId": new_user.id}, 201
 
     @app.route('/api/chat', methods=['POST'])
     def chat():
@@ -82,6 +136,7 @@ def create_app():
             "conversationId": conversation_id,
             "response": ai_text,
             "status": ai_result['status'],
+            "suggestedActions": ai_result.get('suggested_actions', []),
             "title": conv.title
         }
 

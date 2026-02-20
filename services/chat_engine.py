@@ -1,6 +1,7 @@
 import os
 import openai
 from dotenv import load_dotenv
+from duckduckgo_search import DDGS
 
 load_dotenv()
 
@@ -40,7 +41,29 @@ Al final de tu respuesta, clasifica internamente el "estado" de la consulta en u
 - 'analyzing': Consulta normal informativa o entrevista inicial.
 - 'risk': Se detecta un riesgo legal o urgencia.
 - 'document': El usuario solicita un documento y tú lo estás entregando o redactando.
+
+IMPORTANTE: Genera siempre 2 o 3 "Acciones Sugeridas" cortas para que el usuario continúe la conversación.
+Usa el formato estricto: [ACCION: Título de la acción] al final del texto.
+Ejemplos:
+[ACCION: Redactar Contrato]
+[ACCION: Ver Ley 820]
+[ACCION: Contactar Abogado]
 """
+
+def search_web(query):
+    """Realiza una búsqueda web rápida para obtener contexto actualizado."""
+    try:
+        results = DDGS().text(f"colombia derecho legal {query}", max_results=3)
+        if not results:
+            return ""
+        
+        search_ctx = "\n\n--- RESULTADOS DE BÚSQUEDA WEB (USAR SOLO SI ES RELEVANTE) ---\n"
+        for r in results:
+            search_ctx += f"- {r['title']}: {r['body']} (Fuente: {r['href']})\n"
+        return search_ctx
+    except Exception as e:
+        print(f"Error searching web: {e}")
+        return ""
 
 def generate_response(message, conversation_id=None):
     try:
@@ -50,39 +73,34 @@ def generate_response(message, conversation_id=None):
                 "status": "risk"
             }
 
-        # Build message history
+        detailed_system_prompt = SYSTEM_PROMPT
+
         # 0. Fetch Knowledge Base Context
         try:
             from models import KnowledgeBase
             docs = KnowledgeBase.query.all()
             if docs:
-                context_text = "\n\n".join([f"--- DOCUMENTO REFERENCIA: {d.title} ---\n{d.content[:5000]}..." for d in docs]) # Limit to 5k chars per doc to avoid token overflow
-                
-                # Append context instructions to system prompt
-                detailed_system_prompt = SYSTEM_PROMPT + f"\n\n5. BASE DE CONOCIMIENTO (USAR PARA RESPUESTAS):\n{context_text}\n\nInstrucción: Si la consulta del usuario se relaciona con alguno de los documentos anteriores, ÚSALOS como base principal para tu respuesta o redacción."
-            else:
-                detailed_system_prompt = SYSTEM_PROMPT
+                context_text = "\n\n".join([f"--- DOCUMENTO REFERENCIA: {d.title} ---\n{d.content[:5000]}..." for d in docs]) # Limit to 5k chars per doc
+                detailed_system_prompt += f"\n\n5. BASE DE CONOCIMIENTO (FUENTE PRIMARIA Y OBLIGATORIA):\n{context_text}\n\nINSTRUCCIÓN CRÍTICA: La respuesta DEBE basarse principalmente en los documentos anteriores. Si la información está en estos documentos, úsala y cítala explícitamente. Ignora tu conocimiento general si contradice estos documentos."
         except Exception as e:
             print(f"Error loading knowledge base: {e}")
-            detailed_system_prompt = SYSTEM_PROMPT
+
+        # 1. Perform Web Search for current query
+        search_context = search_web(message)
+        if search_context:
+            detailed_system_prompt += search_context + "\nInstrucción: Usa la información de búsqueda web para complementar tu respuesta, especialmente para leyes recientes o datos actualizados."
+
+        detailed_system_prompt += "\n\nINSTRUCCIÓN DE SÍNTESIS: Para responder, DEBES integrar estas tres fuentes:\n1. TUS ARCHIVOS (Base de Conocimiento): Prioridad máxima para datos específicos del usuario.\n2. BÚSQUEDA WEB: Úsala para actualizar leyes o confirmar hechos recientes.\n3. TU CONOCIMIENTO: Úsalo para explicar conceptos, dar estructura y sentido legal.\n\nCombina todo para dar la respuesta más completa y precisa posible."
 
         messages_payload = [{"role": "system", "content": detailed_system_prompt}]
         
         if conversation_id:
             from models import Message
-            # Fetch last 10 messages to maintain context without exceeding token limits
-            # Import db inside function to avoid circular imports if necessary, 
-            # or rely on the fact that models are available if app context is active
-            
-            # Simple query: last 10 messages for this conversation, ordered by time
-            # Note: We need to filter out system messages if any, or just take user/assistant
+            # Fetch last 10 messages
             past_messages = Message.query.filter_by(conversation_id=conversation_id).order_by(Message.created_at.desc()).limit(10).all()
-            
-            # Reorder to chronological for the LLM
             past_messages.reverse()
              
             for msg in past_messages:
-                # Map role 'assistant'/'user'. Ensure we don't accidently include system errors as context if stored
                 role = "assistant" if msg.sender_role == "assistant" else "user"
                 messages_payload.append({"role": role, "content": msg.content})
 
@@ -97,19 +115,26 @@ def generate_response(message, conversation_id=None):
 
         ai_text = response.choices[0].message.content
         
-        # Simple heuristic to determine status based on keywords in AI response or user input
-        #Ideally, we would ask the LLM to output JSON with status, but text is fine for now.
+        # Parse Suggested Actions
+        import re
+        suggested_actions = []
+        # Regex to find [ACCION: ...]
+        actions_found = re.findall(r'\[ACCION: (.*?)\]', ai_text)
+        if actions_found:
+            suggested_actions = actions_found
+            # Remove actions from text to keep it clean
+            ai_text = re.sub(r'\[ACCION: .*?\]', '', ai_text).strip()
+
         status = 'analyzing'
         if '⚠️' in ai_text or 'riesgo' in ai_text.lower():
             status = 'risk'
         elif 'contrato' in ai_text.lower() or 'documento' in ai_text.lower():
             status = 'document'
             
-        return {"text": ai_text, "status": status}
+        return {"text": ai_text, "status": status, "suggested_actions": suggested_actions}
 
     except Exception as e:
         print(f"OpenAI Error: {e}")
-        # Fallback to hardcoded responses if OpenAI fails (Quota or Network)
         if "insufficient_quota" in str(e) or "429" in str(e):
             return {
                 "text": "⚠️ **Aviso de Sistema**: El servicio de IA está temporalmente saturado (Cuota Excedida). \n\n" + 

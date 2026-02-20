@@ -9,6 +9,7 @@ class User(db.Model):
     full_name = db.Column(db.String(100))
     role = db.Column(db.Enum('client', 'admin'), default='client')
     is_admin = db.Column(db.Boolean, default=False)
+    is_approved = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     conversations = db.relationship('Conversation', backref='user', lazy=True)

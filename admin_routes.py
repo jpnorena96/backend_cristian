@@ -47,6 +47,7 @@ def get_users():
             "name": u.full_name,
             "role": u.role,
             "isAdmin": u.is_admin,
+            "isApproved": u.is_approved,
             "joinedAt": u.created_at.isoformat(),
             "conversationCount": conv_count
         })
@@ -60,6 +61,7 @@ def create_user():
     name = data.get('name')
     role = data.get('role', 'client')
     is_admin = data.get('isAdmin', False)
+    is_approved = data.get('isApproved', True) # Admin created users are approved by default
 
     if not email or not password:
         return jsonify({"error": "Email and password required"}), 400
@@ -73,7 +75,8 @@ def create_user():
         password_hash=password, # TODO: Hash this
         full_name=name,
         role=role,
-        is_admin=is_admin
+        is_admin=is_admin,
+        is_approved=is_approved
     )
     db.session.add(new_user)
     db.session.commit()
@@ -91,6 +94,7 @@ def update_user(id):
     if 'name' in data: user.full_name = data['name']
     if 'role' in data: user.role = data['role']
     if 'isAdmin' in data: user.is_admin = data['isAdmin']
+    if 'isApproved' in data: user.is_approved = data['isApproved']
     if 'password' in data and data['password']:
         user.password_hash = data['password'] # TODO: Hash this
         
