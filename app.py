@@ -7,7 +7,7 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
     
-    CORS(app)
+    CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5173", "https://iuristatech.com", "https://www.iuristatech.com"]}})
     db.init_app(app)
 
     from admin_routes import admin_bp
