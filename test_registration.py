@@ -3,7 +3,7 @@ import json
 import random
 
 def test_register():
-    url = "http://localhost:5000/api/register"
+    url = "https://n8n-bot-back-cristian.gnuu1e.easypanel.host/api/register"
     email = f"testuser_{random.randint(1000, 9999)}@example.com"
     payload = {
         "email": email,

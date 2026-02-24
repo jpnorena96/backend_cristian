@@ -65,7 +65,7 @@ def search_web(query):
         print(f"Error searching web: {e}")
         return ""
 
-def generate_response(message, conversation_id=None):
+def generate_response(message, conversation_id=None, document_context=None):
     try:
         if not api_key or "placeholder" in api_key:
             return {
@@ -74,6 +74,25 @@ def generate_response(message, conversation_id=None):
             }
 
         detailed_system_prompt = SYSTEM_PROMPT
+
+        # 0. Inject uploaded document context
+        if document_context:
+            doc_name = document_context.get('filename', 'Documento')
+            doc_text = document_context.get('text', '')
+            if doc_text:
+                detailed_system_prompt += f"""
+
+--- DOCUMENTO CARGADO POR EL USUARIO: "{doc_name}" ---
+{doc_text[:15000]}
+--- FIN DEL DOCUMENTO ---
+
+INSTRUCCIÓN CRÍTICA SOBRE EL DOCUMENTO:
+- El usuario ha cargado este documento para tu análisis.
+- DEBES leer, comprender y analizar el contenido del documento.
+- Proporciona un resumen, identifica puntos clave legales, riesgos potenciales y criterios jurídicos relevantes.
+- Si el usuario hace preguntas sobre el documento, responde basándote en su contenido.
+- Cita secciones específicas del documento cuando sea relevante.
+"""
 
         # 0. Fetch Knowledge Base Context
         try:

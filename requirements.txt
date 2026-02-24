@@ -6,4 +6,5 @@ python-dotenv
 openai
 requests
 PyPDF2
+python-docx
 duckduckgo-search
